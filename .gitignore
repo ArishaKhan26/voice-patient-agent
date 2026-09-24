@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Assessment instructions (confidential, local only)
+claude.md
+CLAUDE.md
+
 # Python
 venv/
 __pycache__/
