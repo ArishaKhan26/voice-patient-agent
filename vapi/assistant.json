@@ -1,11 +1,8 @@
 {
   "name": "Patient Registration Agent",
-  "firstMessage": "Hi, thanks for calling! I can help you register as a new patient today. First, could I get your phone number?",
+  "firstMessage": "Hi there! I can help you register as a new patient today. First, could I get your phone number?",
   "endCallPhrases": [
-    "Have a great day, goodbye.",
-    "Take care, goodbye.",
-    "Goodbye for now.",
-    "Thanks for calling, goodbye."
+    "Goodbye now."
   ],
   "transcriber": {
     "provider": "deepgram",
