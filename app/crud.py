@@ -76,6 +76,15 @@ def find_patient_by_call_id(db: Session, call_id: str) -> Patient | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def list_calls_for_patient(db: Session, patient_id: uuid.UUID) -> list[CallLog]:
+    stmt = (
+        select(CallLog)
+        .where(CallLog.patient_id == patient_id)
+        .order_by(CallLog.created_at.desc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def create_call_log(
     db: Session,
     vapi_call_id: str | None,

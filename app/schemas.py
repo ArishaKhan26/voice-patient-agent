@@ -194,3 +194,15 @@ class PatientOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
+
+
+class CallLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    vapi_call_id: str | None
+    phone_number: str | None
+    transcript: str | None
+    summary: str | None
+    ended_reason: str | None
+    created_at: datetime

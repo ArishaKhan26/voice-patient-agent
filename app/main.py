@@ -1,8 +1,9 @@
+import os
 import sys
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.routers import patients, vapi_webhook
@@ -11,6 +12,13 @@ app = FastAPI(title="Patient Registration API")
 
 app.include_router(patients.router)
 app.include_router(vapi_webhook.router)
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+@app.get("/")
+def dashboard():
+    return FileResponse(os.path.join(STATIC_DIR, "dashboard.html"))
 
 
 @app.get("/health")

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.database import get_db
-from app.schemas import PatientCreate, PatientOut, PatientUpdate
+from app.schemas import CallLogOut, PatientCreate, PatientOut, PatientUpdate
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -48,6 +48,15 @@ def update_patient(patient_id: uuid.UUID, data: PatientUpdate, db: Session = Dep
         raise HTTPException(status_code=404, detail="Patient not found")
     patient = crud.update_patient(db, patient, data)
     return envelope(PatientOut.model_validate(patient))
+
+
+@router.get("/{patient_id}/calls")
+def list_patient_calls(patient_id: uuid.UUID, db: Session = Depends(get_db)):
+    patient = crud.get_patient(db, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    calls = crud.list_calls_for_patient(db, patient_id)
+    return envelope([CallLogOut.model_validate(c) for c in calls])
 
 
 @router.delete("/{patient_id}")
