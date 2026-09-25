@@ -1,16 +1,26 @@
 """Handles Vapi's server-URL webhook: tool calls made during a live call,
 and the end-of-call report sent once the call ends.
 
-Payload shapes verified against Vapi's docs (docs.vapi.ai) as of this
-build. Two fields below are documented assumptions rather than confirmed
-facts, since Vapi's docs were incomplete/ambiguous on them - both are
-coded defensively (checked in multiple possible locations) and should be
-double-checked against a real test call in the Vapi dashboard:
-  1. The webhook-secret header name (assumed: "x-vapi-secret").
-  2. Where "summary" lives on the end-of-call-report (checked in three
-     possible locations: message.summary, message.analysis.summary,
-     and artifact.summary).
+Payload shapes verified directly against Vapi's live OpenAPI spec
+(docs.vapi.ai/openapi/api-reference.json and .../webhooks.json) on
+2026-09-25, not just prose docs - in particular:
+  - ToolCall nests name/arguments under `function`, and `arguments`
+    arrives as a JSON-encoded STRING, not an object (ToolCallFunction
+    schema).
+  - ToolCallResult.result must be a STRING, so tool results are
+    json.dumps()'d before being returned.
+  - end-of-call-report has no top-level `summary` field - it's under
+    `analysis.summary` (ServerMessageEndOfCallReport / Analysis schemas).
+  - `customer` lives at the top level of the message, not nested under
+    `call` (ServerMessageEndOfCallReport schema).
+
+The one thing NOT verifiable from the spec: the webhook auth mechanism
+isn't a Vapi-native shared-secret field (there's no such field in the
+current schema at all) - so instead this build defines its own contract:
+setup_assistant.py sets a static `x-webhook-secret` header via
+`assistant.server.headers`, and this file checks for that same header.
 """
+import json
 import os
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -29,9 +39,9 @@ WEBHOOK_SECRET = os.getenv("VAPI_WEBHOOK_SECRET")
 @router.post("/webhook")
 async def vapi_webhook(
     request: Request,
-    x_vapi_secret: str | None = Header(default=None, alias="x-vapi-secret"),
+    x_webhook_secret: str | None = Header(default=None, alias="x-webhook-secret"),
 ):
-    if WEBHOOK_SECRET and x_vapi_secret != WEBHOOK_SECRET:
+    if WEBHOOK_SECRET and x_webhook_secret != WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="invalid webhook secret")
 
     body = await request.json()
@@ -60,8 +70,17 @@ def _handle_tool_calls(db: Session, message: dict) -> dict:
     results = []
     for tc in tool_calls:
         tool_call_id = tc.get("id")
-        name = tc.get("name")
-        arguments = tc.get("arguments") or {}
+        func = tc.get("function") or {}
+        name = func.get("name")
+
+        raw_arguments = func.get("arguments")
+        if isinstance(raw_arguments, str):
+            try:
+                arguments = json.loads(raw_arguments) if raw_arguments else {}
+            except json.JSONDecodeError:
+                arguments = {}
+        else:
+            arguments = raw_arguments or {}
 
         if name == "find_patient":
             result = find_patient_tool(db, arguments)
@@ -70,7 +89,7 @@ def _handle_tool_calls(db: Session, message: dict) -> dict:
         else:
             result = {"ok": False, "error": f"unknown tool: {name}"}
 
-        results.append({"toolCallId": tool_call_id, "result": result})
+        results.append({"toolCallId": tool_call_id, "name": name, "result": json.dumps(result)})
 
     return {"results": results}
 
@@ -81,15 +100,11 @@ def _handle_end_of_call_report(db: Session, message: dict) -> None:
     ended_reason = message.get("endedReason")
 
     artifact = message.get("artifact") or {}
-    transcript = artifact.get("transcript") or message.get("transcript")
-    summary = (
-        message.get("summary")
-        or (message.get("analysis") or {}).get("summary")
-        or artifact.get("summary")
-    )
+    transcript = artifact.get("transcript")
+    summary = (message.get("analysis") or {}).get("summary")
 
     phone_number = None
-    raw_phone = (call.get("customer") or {}).get("number")
+    raw_phone = (message.get("customer") or {}).get("number")
     if raw_phone:
         phone_number = normalize_phone(str(raw_phone))
 

@@ -7,15 +7,15 @@ since the webhook needs a real public URL for Vapi to call.
 
 Usage: source venv/bin/activate && python vapi/setup_assistant.py
 
-NOTE on assumptions: a few Vapi field names below (model.url for
-custom-llm, model.apiKey, messagePlan.idleMessages, endCallFunctionEnabled)
-were not fully confirmed against Vapi's docs during development - they're
-based on the most common documented pattern, but Vapi's schema does
-change. After running this script, open the assistant in the Vapi
-dashboard and check the Model tab: if the Groq connection or system
-prompt don't look right there, paste the Groq API key in manually and
-adjust the field that didn't take (the tools/serverUrl/transcriber
-sections are more confidently correct and shouldn't need touching).
+Field shapes below were verified directly against Vapi's live OpenAPI
+spec (docs.vapi.ai/openapi/api-reference.json) on 2026-09-25, after an
+initial guess-based version got rejected by the API on both `model.apiKey`
+and `model.credentialId` (Vapi's actual pattern: create a Credential
+resource, then reference it via the assistant's top-level `credentialIds`
+array - not any field on `model` itself). Webhook auth is NOT a
+Vapi-native field (there's no shared-secret field in the schema at all) -
+this build instead sets a static `x-webhook-secret` header via
+`assistant.server.headers`, checked in app/routers/vapi_webhook.py.
 """
 import json
 import os
@@ -35,6 +35,7 @@ VAPI_WEBHOOK_SECRET = os.getenv("VAPI_WEBHOOK_SECRET")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSISTANT_ID_FILE = os.path.join(HERE, ".assistant_id")
+CREDENTIAL_ID_FILE = os.path.join(HERE, ".credential_id")
 ASSISTANT_JSON_PATH = os.path.join(HERE, "assistant.json")
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(HERE), "prompts", "system_prompt.md")
 
@@ -58,17 +59,46 @@ def load_system_prompt() -> str:
     return match.group(1).strip()
 
 
-def build_payload() -> dict:
+def get_or_create_groq_credential(client: httpx.Client, headers: dict) -> str:
+    """Vapi's custom-llm provider takes the API key via a separate
+    Credential resource, referenced from the assistant's top-level
+    credentialIds array (confirmed via Vapi's OpenAPI spec - CreateAssistantDTO
+    has no apiKey or credentialId field anywhere on `model` itself)."""
+    if os.path.exists(CREDENTIAL_ID_FILE):
+        with open(CREDENTIAL_ID_FILE) as f:
+            cached = f.read().strip()
+        if cached:
+            return cached
+
+    resp = client.post(
+        f"{VAPI_BASE}/credential",
+        headers=headers,
+        json={"provider": "custom-llm", "apiKey": GROQ_API_KEY, "name": "groq"},
+    )
+    if resp.status_code not in (200, 201):
+        print(f"FAIL: creating Groq credential returned {resp.status_code}")
+        print(resp.text)
+        sys.exit(1)
+
+    credential_id = resp.json()["id"]
+    with open(CREDENTIAL_ID_FILE, "w") as f:
+        f.write(credential_id)
+    return credential_id
+
+
+def build_payload(credential_id: str) -> dict:
     with open(ASSISTANT_JSON_PATH) as f:
         payload = json.load(f)
 
     system_prompt = load_system_prompt()
     payload["model"]["model"] = GROQ_MODEL
     payload["model"]["messages"][0]["content"] = system_prompt
-    payload["model"]["apiKey"] = GROQ_API_KEY  # best-effort field name, see module docstring
 
-    payload["serverUrl"] = f"{PUBLIC_BASE_URL.rstrip('/')}/vapi/webhook"
-    payload["serverUrlSecret"] = VAPI_WEBHOOK_SECRET
+    payload["credentialIds"] = [credential_id]
+    payload["server"] = {
+        "url": f"{PUBLIC_BASE_URL.rstrip('/')}/vapi/webhook",
+        "headers": {"x-webhook-secret": VAPI_WEBHOOK_SECRET},
+    }
 
     return payload
 
@@ -79,7 +109,6 @@ def main():
     _require(PUBLIC_BASE_URL, "PUBLIC_BASE_URL")
     _require(VAPI_WEBHOOK_SECRET, "VAPI_WEBHOOK_SECRET")
 
-    payload = build_payload()
     headers = {"Authorization": f"Bearer {VAPI_API_KEY}", "Content-Type": "application/json"}
 
     existing_id = None
@@ -88,6 +117,9 @@ def main():
             existing_id = f.read().strip() or None
 
     with httpx.Client(timeout=30) as client:
+        credential_id = get_or_create_groq_credential(client, headers)
+        payload = build_payload(credential_id)
+
         if existing_id:
             resp = client.patch(f"{VAPI_BASE}/assistant/{existing_id}", headers=headers, json=payload)
         else:
@@ -105,7 +137,7 @@ def main():
 
     action = "Updated" if existing_id else "Created"
     print(f"OK: {action} assistant {assistant_id}")
-    print(f"    serverUrl -> {payload['serverUrl']}")
+    print(f"    server.url -> {payload['server']['url']}")
     print("    Next: open this assistant in the Vapi dashboard, do a test web call,")
     print("    then claim a free phone number and attach it to this assistant.")
 

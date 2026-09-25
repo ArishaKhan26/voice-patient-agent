@@ -26,3 +26,4 @@ __pycache__/
 
 # Local Vapi assistant run state (not secret, just local run state)
 vapi/.assistant_id
+vapi/.credential_id
