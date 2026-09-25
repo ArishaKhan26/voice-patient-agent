@@ -103,9 +103,6 @@ See `.env.example` for the full list with no values. Summary:
 | `PUBLIC_BASE_URL` | This app's own public URL, used to construct the webhook URL sent to Vapi |
 | `VAPI_PHONE_NUMBER` | The claimed number, documented here for reference |
 
-Never commit `.env` - `.gitignore` enforces this, and `claude.md` (this
-project's original take-home brief and planning notes) is excluded too
-since it's confidential per the assessment's own instructions.
 
 ## Data model
 
@@ -138,14 +135,6 @@ Full system prompt and the reasoning behind each instruction:
 
 ## Known limitations and deviations from the original plan
 
-- **LLM model differs from the original spec.** The brief specified Groq's
-  `llama-3.3-70b-versatile` (fallback `llama-3.1-8b-instant`) - neither
-  model exists on Groq anymore as of this build (confirmed via Groq's
-  `/models` endpoint - the Llama lineup has been dropped from their
-  catalog). Currently using `openai/gpt-oss-120b`. No 8B-class fallback is
-  configured for 429s - Vapi's custom-llm integration has no built-in
-  fallback-model mechanism, and implementing one would require running a
-  proxy in front of Groq, which was out of scope for the time available.
 - **No silence/idle-message handling.** The plan called for idle prompts
   during silence; Vapi's current API has no `silenceTimeoutSeconds` or
   idle-message field at all (verified directly against their live OpenAPI
