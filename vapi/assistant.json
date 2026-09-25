@@ -1,0 +1,90 @@
+{
+  "name": "Patient Registration Agent",
+  "firstMessage": "Hi, thanks for calling! I can help you register as a new patient today. First, could I get your phone number?",
+  "endCallFunctionEnabled": true,
+  "silenceTimeoutSeconds": 20,
+  "messagePlan": {
+    "idleMessages": [
+      "Are you still there?",
+      "Take your time - I'm here whenever you're ready."
+    ],
+    "idleMessageMaxSpokenCount": 2,
+    "idleTimeoutSeconds": 10
+  },
+  "transcriber": {
+    "provider": "deepgram",
+    "model": "nova-2",
+    "language": "en-US"
+  },
+  "model": {
+    "provider": "custom-llm",
+    "model": "__GROQ_MODEL__",
+    "url": "https://api.groq.com/openai/v1",
+    "temperature": 0.4,
+    "messages": [
+      { "role": "system", "content": "__SYSTEM_PROMPT__" }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "find_patient",
+          "description": "Looks up an existing patient by phone number, to detect returning callers before registering a new person.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "phone": {
+                "type": "string",
+                "description": "The caller's phone number, in whatever format they said it."
+              }
+            },
+            "required": ["phone"]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "submit_patient",
+          "description": "Validates and optionally saves patient registration data. Call with confirmed=false first to get normalized values and any field errors for read-back; call again with confirmed=true only after the caller verbally confirms.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "fields": {
+                "type": "object",
+                "description": "Patient fields collected so far. Pass values exactly as the caller said them (spoken dates, full state names, etc.) - the server normalizes them.",
+                "properties": {
+                  "first_name": { "type": "string" },
+                  "last_name": { "type": "string" },
+                  "date_of_birth": { "type": "string", "description": "As spoken, e.g. 'March 3rd 1990' or '03/03/1990'." },
+                  "sex": { "type": "string", "enum": ["Male", "Female", "Other", "Decline to Answer"] },
+                  "phone_number": { "type": "string" },
+                  "email": { "type": "string" },
+                  "address_line_1": { "type": "string" },
+                  "address_line_2": { "type": "string" },
+                  "city": { "type": "string" },
+                  "state": { "type": "string", "description": "Full state name or abbreviation, as said." },
+                  "zip_code": { "type": "string" },
+                  "insurance_provider": { "type": "string" },
+                  "insurance_member_id": { "type": "string" },
+                  "preferred_language": { "type": "string" },
+                  "emergency_contact_name": { "type": "string" },
+                  "emergency_contact_phone": { "type": "string" }
+                }
+              },
+              "confirmed": {
+                "type": "boolean",
+                "description": "false to validate and get a read-back; true to actually save, only after the caller confirms out loud."
+              },
+              "patient_id": {
+                "type": "string",
+                "description": "Only include this if find_patient found an existing record and the caller wants to update it rather than register a new person."
+              }
+            },
+            "required": ["fields", "confirmed"]
+          }
+        }
+      }
+    ]
+  }
+}

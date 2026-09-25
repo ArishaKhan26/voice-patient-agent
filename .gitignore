@@ -23,3 +23,6 @@ __pycache__/
 
 # Logs
 *.log
+
+# Local Vapi assistant run state (not secret, just local run state)
+vapi/.assistant_id
