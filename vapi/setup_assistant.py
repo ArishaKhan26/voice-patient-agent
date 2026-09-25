@@ -16,6 +16,19 @@ array - not any field on `model` itself). Webhook auth is NOT a
 Vapi-native field (there's no shared-secret field in the schema at all) -
 this build instead sets a static `x-webhook-secret` header via
 `assistant.server.headers`, checked in app/routers/vapi_webhook.py.
+
+IMPORTANT: model.metadataSendMode is explicitly set to "off" in
+assistant.json. Vapi's default ("variable") injects the entire `call` and
+`assistant` config objects as extra top-level fields into the raw request
+it sends to the custom-llm endpoint. Groq's strict OpenAI-compatible
+validator rejects this outright ("property 'assistant' is unsupported",
+HTTP 400) - every single test call failed on this until it was found by
+pulling the raw request/response out of Vapi's call-logs endpoint
+(GET /call/{id}/call-logs). This was NOT model-specific - it broke every
+Groq model tried (llama-3.3-70b-versatile before it was deprecated,
+openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b), which is why
+several earlier debugging detours (assuming it was a reasoning-model
+streaming-format issue, or a Groq per-minute rate limit) were dead ends.
 """
 import json
 import os
