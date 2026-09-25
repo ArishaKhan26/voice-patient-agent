@@ -14,6 +14,7 @@
     "model": "__GROQ_MODEL__",
     "url": "https://api.groq.com/openai/v1",
     "temperature": 0.4,
+    "maxTokens": 300,
     "messages": [
       {
         "role": "system",
